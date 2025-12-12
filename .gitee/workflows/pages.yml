@@ -1,0 +1,25 @@
+name: Deploy to Gitee Pages
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 如需构建，可在此插入 npm/yarn/pnpm 构建步骤；当前为纯静态，直接发布。
+
+      - name: Deploy to Gitee Pages
+        uses: yanglbme/gitee-pages-action@v1.3.4
+        with:
+          gitee_token: ${{ secrets.GITEE_TOKEN }}
+          gitee_username: ${{ secrets.GITEE_USERNAME }}
+          gitee_password: ${{ secrets.GITEE_PASSWORD }}
+          gitee_repo: ${{ secrets.GITEE_REPO }} # 形如 username/repo
+          branch: main

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProSolo 数据提取助手</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/exifr.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="top-bar">
+    <div>
+      <div class="title">ProSolo 读数提取助手</div>
+      <div class="subtitle">批量导入照片 · 自动按拍摄时间排序 · AI 识别 · Excel 导出</div>
+    </div>
+    <div class="badge">本地运行</div>
+  </header>
+
+  <main class="container">
+    <section class="controls">
+      <div class="control-row triple">
+        <div class="control column">
+          <label for="providerSelect">API Provider</label>
+          <select id="providerSelect">
+            <option value="openai-compatible">OpenAI Compatible</option>
+            <option value="modelscope">ModelScope</option>
+            <option value="azure-openai">Azure OpenAI</option>
+          </select>
+          <label for="baseUrl">Base URL</label>
+          <input type="text" id="baseUrl" value="https://api-inference.modelscope.cn/v1" style="min-width: 260px;">
+        </div>
+        <div class="control column">
+          <label for="apiKey">OpenAI Compatible API Key</label>
+          <div class="key-field">
+            <input type="password" id="apiKey" placeholder="Bearer ..." autocomplete="off" value="ms-4c119e8e-7058-4e64-9af4-b538e86b163e">
+            <button id="toggleKey" type="button">显示</button>
+          </div>
+          <div class="hint">本地存储，不会上传。</div>
+          <label for="modelInput">Model ID</label>
+          <input type="text" id="modelInput" value="Qwen/Qwen3-Coder-30B-A3B-Instruct" list="modelList">
+          <datalist id="modelList">
+            <option value="Qwen/Qwen3-Coder-30B-A3B-Instruct"></option>
+            <option value="Qwen/Qwen3-VL-23B-A22B-Instruct"></option>
+            <option value="gpt-4o-mini"></option>
+            <option value="gpt-4o"></option>
+          </datalist>
+        </div>
+        <div class="control column">
+          <div class="row space-between">
+            <label>Custom Headers</label>
+            <button id="addHeaderBtn" type="button" class="ghost">Add Header</button>
+          </div>
+          <div id="headersList" class="headers-list"></div>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="control column">
+          <label>API 方案</label>
+          <div class="row">
+            <select id="profileSelect" style="min-width: 200px;"></select>
+            <button id="deleteProfileBtn" type="button" class="danger ghost">删除方案</button>
+          </div>
+          <div class="row">
+            <input type="text" id="profileName" placeholder="方案名称（例如：ModelScope-小模型）" style="min-width: 240px;">
+            <button id="saveProfileBtn" type="button" class="ghost">保存为方案</button>
+          </div>
+          <div class="hint">保存/切换不同的 Base URL、模型、Key、Headers 配置。</div>
+        </div>
+        <div class="control column">
+          <label>API 配置导入/导出</label>
+          <div class="row">
+            <button id="exportConfigBtn" type="button" class="ghost">导出配置</button>
+            <button id="importConfigBtn" type="button" class="ghost">导入配置</button>
+            <input type="file" id="configImportInput" accept="application/json" style="display:none;">
+          </div>
+          <div class="hint">导出/导入包含方案、Headers、间隔/重试、缓存开关等。</div>
+        </div>
+        <div class="control column">
+          <label>界面模式</label>
+          <div class="row">
+            <input type="checkbox" id="mobileModeToggle">
+            <label for="mobileModeToggle">强制手机布局</label>
+          </div>
+          <div class="hint">在桌面上预览手机布局；手机浏览器默认自适应，可手动关闭/开启。</div>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="control">
+          <label for="depthStart">首张深度标签</label>
+          <input type="text" id="depthStart" value="水面 / 0 m">
+          <label for="depthStep" class="inline">间隔 (m)</label>
+          <input type="number" id="depthStep" min="0" step="0.1" value="1">
+          <div class="hint">按拍摄时间排序后依次应用，可在列表里手工改动。</div>
+        </div>
+      </div>
+
+      <div class="control-row triple">
+        <div class="control column">
+          <label>识别节奏</label>
+          <div class="row">
+            <label for="intervalMs">间隔(ms)</label>
+            <input type="number" id="intervalMs" value="1200" min="0" step="100" style="width: 110px;">
+            <label for="maxAttempts" class="inline">重试</label>
+            <input type="number" id="maxAttempts" value="3" min="1" max="5" style="width: 80px;">
+          </div>
+          <div class="row">
+            <button id="pauseBtn" type="button" class="ghost">暂停队列</button>
+            <button id="resumeBtn" type="button" class="ghost">继续队列</button>
+          </div>
+        </div>
+        <div class="control column">
+          <label for="filterSelect">列表筛选</label>
+          <select id="filterSelect" style="min-width: 180px;">
+            <option value="all">全部</option>
+            <option value="error">仅错误</option>
+            <option value="nodata">仅未识别</option>
+            <option value="pending">仅未处理</option>
+            <option value="done">仅已识别</option>
+          </select>
+          <label for="importCsv">导入深度/采样点 CSV</label>
+          <div class="row">
+            <input type="file" id="importCsv" accept=".csv">
+          </div>
+          <div class="hint">CSV列: filename,depth,point,isPointStart(0/1)。匹配文件名应用深度/采样点。</div>
+        </div>
+        <div class="control column">
+          <label>导出选项</label>
+          <div class="row">
+            <input type="checkbox" id="includeMeta">
+            <label for="includeMeta">附带文件名/拍摄时间</label>
+          </div>
+          <div class="row">
+            <input type="checkbox" id="includeErrors">
+            <label for="includeErrors">附带错误/状态</label>
+          </div>
+          <div class="row">
+            <input type="checkbox" id="useCache" checked>
+            <label for="useCache">启用识别缓存</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="dropzone" id="dropZone">
+          <div class="drop-icon">⤓</div>
+          <div>点击选择或拖动照片到这里，支持批量导入</div>
+          <div class="hint">导入后自动读取拍摄时间排序</div>
+          <input type="file" id="fileInput" accept="image/*" multiple>
+        </div>
+        <div class="actions">
+          <button id="extractBtn" type="button">开始AI识别</button>
+          <button id="exportBtn" type="button" disabled>导出 Excel</button>
+          <button id="clearBtn" type="button" class="danger">清空所有照片</button>
+          <button id="checkBtn" type="button" class="ghost">检查 API</button>
+          <div class="small-hint" id="apiStatus">API 状态: 未检查</div>
+          <div class="small-hint">模糊无法识别的会保留为空白单元格。</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <div class="section-title">照片列表</div>
+          <div class="hint">自动按拍摄时间排序，可点击缩略图放大核对顺序。</div>
+        </div>
+        <div class="section-meta">
+          <span id="countLabel">0 张</span>
+          <span id="sortLabel">排序: 拍摄时间 ⬆️</span>
+        </div>
+      </div>
+      <div id="list" class="card-list"></div>
+    </section>
+  </main>
+
+  <div id="previewModal" class="modal hidden">
+    <div class="modal-content">
+      <button id="closePreview" class="close-btn">×</button>
+      <img id="previewImg" alt="预览">
+      <div id="previewMeta" class="preview-meta"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+
+  <footer style="text-align:center; padding:10px 0; color:#6b7b92; font-size:12px;">
+    制作人 邓梓杰<br>
+    江西水利电力大学 - 江西师范大学
+  </footer>
+</body>
+</html>
