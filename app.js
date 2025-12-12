@@ -512,6 +512,22 @@ function summaryText(result, hasDataOverride) {
   return hasData ? parts.join(" · ") : "未识别";
 }
 
+function parseNumbersFromText(content) {
+  if (!content) return null;
+  const raw = typeof content === "string" ? content : JSON.stringify(content);
+  const numReg = /-?\d+(?:\.\d+)?/g;
+  const nums = raw.match(numReg)?.map((v) => parseFloat(v)) || [];
+  if (!nums.length) return null;
+  const out = { temperature_c: null, oxygen_mmhg: null, do_percent: null, do_mg_per_l: null, raw };
+  nums.forEach((n) => {
+    if (out.temperature_c === null && n > -5 && n < 40) out.temperature_c = n;
+    else if (out.oxygen_mmhg === null && n > 600 && n < 900) out.oxygen_mmhg = n;
+    else if (out.do_percent === null && n >= 0 && n <= 200) out.do_percent = n;
+    else if (out.do_mg_per_l === null && n >= 0 && n <= 50) out.do_mg_per_l = n;
+  });
+  return out;
+}
+
 async function runExtraction() {
   if (state.extracting) return;
   const key = els.apiKey.value.trim();
@@ -631,7 +647,7 @@ async function extractItem(item, apiKey, baseUrl, modelId, useOriginal = false) 
 
   const json = await res.json();
   const content = json.choices?.[0]?.message?.content;
-  const parsed = safeParse(content);
+  const parsed = safeParse(content) || parseNumbersFromText(content);
   return parsed || { raw: content };
 }
 
@@ -960,22 +976,19 @@ function hasAnyValue(obj) {
 async function extractWithRetry(item, apiKey, baseUrl, modelId) {
   let attempt = 0;
   let lastErr = null;
-  const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
   while (attempt < state.maxAttempts) {
     attempt += 1;
     try {
-      // 桌面优先用原图，移动端先压缩后原图
-      const preferOriginal = !isTouch;
-      const res = await extractItem(item, apiKey, baseUrl, modelId, preferOriginal);
+      const res = await extractItem(item, apiKey, baseUrl, modelId, true);
       return res;
     } catch (err) {
       lastErr = err;
       const status = err?.status;
-      // 如果无数据或解析失败，尝试一次原图
-      if ((err.message?.includes("未识别") || err.message?.includes("解析")) && item.original) {
+      // 如果原图失败，尝试压缩图
+      if (item.payload && !err._triedCompressed) {
         try {
-          const resRaw = await extractItem(item, apiKey, baseUrl, modelId, true);
-          return resRaw;
+          const resCompressed = await extractItem(item, apiKey, baseUrl, modelId, false);
+          return resCompressed;
         } catch (e) {
           lastErr = e;
         }
