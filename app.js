@@ -221,6 +221,7 @@ async function handleFiles(fileList) {
     const meta = await readMeta(file);
     const captureMs = meta.capture?.getTime?.() ?? captureMsFromName(file.name, file.lastModified) ?? file.lastModified;
     const previewUrl = URL.createObjectURL(file);
+    const originalDataUrl = await readFileAsDataURL(file);
     const payloadDataUrl = await buildPayloadDataUrl(file, meta.orientation);
     const cached = state.cache[file.name];
     const cachedHasData =
@@ -235,6 +236,7 @@ async function handleFiles(fileList) {
       name: file.name,
       preview: previewUrl,
       payload: payloadDataUrl,
+      original: originalDataUrl,
       capture: meta.capture,
       captureMs,
       orientation: meta.orientation,
@@ -562,8 +564,8 @@ async function runExtraction() {
   }
 }
 
-async function extractItem(item, apiKey, baseUrl, modelId) {
-  const source = item.payload || item.preview;
+async function extractItem(item, apiKey, baseUrl, modelId, useOriginal = false) {
+  const source = useOriginal ? item.original || item.payload || item.preview : item.payload || item.preview;
   const base64 = source.split(",")[1];
   const body = {
     model: modelId,
@@ -972,11 +974,20 @@ async function extractWithRetry(item, apiKey, baseUrl, modelId) {
   while (attempt < state.maxAttempts) {
     attempt += 1;
     try {
-      const res = await extractItem(item, apiKey, baseUrl, modelId);
+      const res = await extractItem(item, apiKey, baseUrl, modelId, false);
       return res;
     } catch (err) {
       lastErr = err;
       const status = err?.status;
+      // 如果无数据或解析失败，尝试一次原图
+      if ((err.message?.includes("未识别") || err.message?.includes("解析")) && item.original) {
+        try {
+          const resRaw = await extractItem(item, apiKey, baseUrl, modelId, true);
+          return resRaw;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
       if (status === 429 || status === 503) {
         const backoff = state.intervalMs * attempt;
         await wait(backoff);
