@@ -219,10 +219,16 @@ async function handleFiles(fileList) {
   for (const file of incoming) {
     const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
     const meta = await readMeta(file);
-    const captureMs = meta.capture?.getTime?.() ?? file.lastModified;
+    const captureMs = meta.capture?.getTime?.() ?? captureMsFromName(file.name) ?? file.lastModified;
     const previewUrl = URL.createObjectURL(file);
     const payloadDataUrl = await buildPayloadDataUrl(file, meta.orientation);
     const cached = state.cache[file.name];
+    const cachedHasData =
+      cached &&
+      cached.result &&
+      [cached.result.temperature_c, cached.result.oxygen_mmhg, cached.result.do_percent, cached.result.do_mg_per_l].some(
+        (v) => Number.isFinite(v)
+      );
     state.items.push({
       id,
       file,
@@ -234,8 +240,8 @@ async function handleFiles(fileList) {
       orientation: meta.orientation,
       isPointStart: existingCount === 0 && state.items.length === 0,
       depthLabel: cached?.depthLabel || "",
-      status: cached && els.useCache?.checked ? cached.status || "done" : "pending",
-      result: cached && els.useCache?.checked ? cached.result || null : null,
+      status: cached && els.useCache?.checked && cachedHasData ? cached.status || "done" : "pending",
+      result: cached && els.useCache?.checked && cachedHasData ? cached.result || null : null,
       error: null,
       point: cached?.point || undefined,
       isPointStartCached: cached?.isPointStart || false,
@@ -257,6 +263,20 @@ async function readMeta(file) {
   } catch (e) {
     return { capture: null, orientation: null };
   }
+}
+
+function captureMsFromName(name) {
+  const m = name.match(/(\d{8})[_-]?(\d{6})/);
+  if (!m) return null;
+  const dateStr = m[1];
+  const timeStr = m[2];
+  const y = parseInt(dateStr.slice(0, 4), 10);
+  const mo = parseInt(dateStr.slice(4, 6), 10) - 1;
+  const d = parseInt(dateStr.slice(6, 8), 10);
+  const hh = parseInt(timeStr.slice(0, 2), 10);
+  const mm = parseInt(timeStr.slice(2, 4), 10);
+  const ss = parseInt(timeStr.slice(4, 6), 10);
+  return new Date(y, mo, d, hh, mm, ss).getTime();
 }
 
 function sortItems() {
