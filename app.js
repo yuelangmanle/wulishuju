@@ -23,6 +23,7 @@ const els = {
   clearBtn: document.getElementById("clearBtn"),
   checkBtn: document.getElementById("checkBtn"),
   apiStatus: document.getElementById("apiStatus"),
+  corsProxy: document.getElementById("corsProxy"),
   profileSelect: document.getElementById("profileSelect"),
   profileName: document.getElementById("profileName"),
   saveProfileBtn: document.getElementById("saveProfileBtn"),
@@ -70,6 +71,8 @@ function init() {
   if (savedBase) {
     els.baseUrl.value = savedBase;
   }
+  const savedProxy = localStorage.getItem("api_cors_proxy");
+  if (savedProxy && els.corsProxy) els.corsProxy.value = savedProxy;
   const savedProvider = localStorage.getItem("api_provider");
   if (savedProvider) {
     els.provider.value = savedProvider;
@@ -172,6 +175,7 @@ function init() {
   els.addHeaderBtn.addEventListener("click", () => addHeader());
   els.provider.addEventListener("change", persistSettings);
   els.baseUrl.addEventListener("change", persistSettings);
+  if (els.corsProxy) els.corsProxy.addEventListener("change", persistSettings);
   els.modelInput.addEventListener("change", persistSettings);
   els.saveProfileBtn.addEventListener("click", saveProfile);
   els.deleteProfileBtn.addEventListener("click", deleteProfile);
@@ -533,6 +537,7 @@ async function runExtraction() {
   const key = els.apiKey.value.trim();
   const baseUrlRaw = els.baseUrl.value.trim() || "https://api-inference.modelscope.cn/v1";
   const baseUrl = baseUrlRaw.replace(/\/$/, "");
+  const corsProxy = (els.corsProxy?.value || "").trim();
   const modelId = els.modelInput.value.trim() || "Qwen/Qwen3-Coder-30B-A3B-Instruct";
   if (!key) {
     alert("请先填入 API Key");
@@ -557,7 +562,7 @@ async function runExtraction() {
       item.error = null;
       renderList();
       try {
-        const result = await extractWithRetry(item, key, baseUrl, modelId);
+        const result = await extractWithRetry(item, key, baseUrl, modelId, corsProxy);
         item.result = result;
         item.status = "done";
         updateCache(item);
@@ -580,7 +585,7 @@ async function runExtraction() {
   }
 }
 
-async function extractItem(item, apiKey, baseUrl, modelId, useOriginal = false) {
+async function extractItem(item, apiKey, baseUrl, modelId, corsProxy, useOriginal = false) {
   const source = useOriginal ? item.original || item.payload || item.preview : item.payload || item.preview;
   const base64 = source.split(",")[1];
   const body = {
@@ -622,7 +627,9 @@ async function extractItem(item, apiKey, baseUrl, modelId, useOriginal = false) 
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
-  const endpoint = `${baseUrl}/chat/completions`;
+  const endpointBase = baseUrl.replace(/\/$/, "");
+  const proxy = corsProxy ? corsProxy.replace(/\/$/, "") : "";
+  const endpoint = proxy ? `${proxy}/${endpointBase}/chat/completions` : `${endpointBase}/chat/completions`;
   const res = await fetch(endpoint, {
     method: "POST",
     headers,
@@ -648,7 +655,12 @@ async function extractItem(item, apiKey, baseUrl, modelId, useOriginal = false) 
   const json = await res.json();
   const content = json.choices?.[0]?.message?.content;
   const parsed = safeParse(content) || parseNumbersFromText(content);
-  return parsed || { raw: content };
+  if (!parsed || !hasAnyValue(parsed)) {
+    const err = new Error("未识别");
+    err.raw = typeof content === "string" ? content : JSON.stringify(content || {});
+    throw err;
+  }
+  return parsed;
 }
 
 function exportExcel() {
@@ -780,6 +792,7 @@ function persistSettings() {
   localStorage.setItem("api_provider", els.provider.value);
   localStorage.setItem("api_base_url", els.baseUrl.value.trim());
   localStorage.setItem("api_model_id", els.modelInput.value.trim());
+  if (els.corsProxy) localStorage.setItem("api_cors_proxy", els.corsProxy.value.trim());
 }
 
 function syncAuthHeader(key) {
@@ -973,13 +986,13 @@ function hasAnyValue(obj) {
   return ["temperature_c", "oxygen_mmhg", "do_percent", "do_mg_per_l"].some((k) => Number.isFinite(obj[k]));
 }
 
-async function extractWithRetry(item, apiKey, baseUrl, modelId) {
+async function extractWithRetry(item, apiKey, baseUrl, modelId, corsProxy) {
   let attempt = 0;
   let lastErr = null;
   while (attempt < state.maxAttempts) {
     attempt += 1;
     try {
-      const res = await extractItem(item, apiKey, baseUrl, modelId, true);
+      const res = await extractItem(item, apiKey, baseUrl, modelId, corsProxy, true);
       return res;
     } catch (err) {
       lastErr = err;
@@ -987,7 +1000,7 @@ async function extractWithRetry(item, apiKey, baseUrl, modelId) {
       // 如果原图失败，尝试压缩图
       if (item.payload && !err._triedCompressed) {
         try {
-          const resCompressed = await extractItem(item, apiKey, baseUrl, modelId, false);
+          const resCompressed = await extractItem(item, apiKey, baseUrl, modelId, corsProxy, false);
           return resCompressed;
         } catch (e) {
           lastErr = e;
