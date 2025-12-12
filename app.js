@@ -413,7 +413,7 @@ function renderList() {
     if (item.status === "done" && hasData) status.classList.add("done");
     if (item.status === "done" && !hasData) status.classList.add("error", "nodata");
     if (item.status === "error") status.classList.add("error");
-    status.title = item.error || "";
+    status.title = item.error || item.result?.raw || "";
     status.textContent =
       item.status === "pending"
         ? "未处理"
@@ -630,7 +630,17 @@ async function extractItem(item, apiKey, baseUrl, modelId) {
   const json = await res.json();
   const content = json.choices?.[0]?.message?.content;
   const parsed = safeParse(content);
-  if (!parsed) throw new Error("返回内容无法解析为 JSON");
+  if (!parsed) {
+    const raw = typeof content === "string" ? content : JSON.stringify(content || {});
+    const err = new Error("返回内容无法解析为 JSON");
+    err.raw = raw;
+    throw err;
+  }
+  if (!hasAnyValue(parsed)) {
+    const err = new Error("未识别到数据");
+    err.raw = typeof content === "string" ? content : JSON.stringify(content || {});
+    throw err;
+  }
   return parsed;
 }
 
@@ -949,6 +959,11 @@ function safeParse(content) {
 function truncateText(str, max = 180) {
   if (!str) return "";
   return str.length > max ? `${str.slice(0, max)}...` : str;
+}
+
+function hasAnyValue(obj) {
+  if (!obj || typeof obj !== "object") return false;
+  return ["temperature_c", "oxygen_mmhg", "do_percent", "do_mg_per_l"].some((k) => Number.isFinite(obj[k]));
 }
 
 async function extractWithRetry(item, apiKey, baseUrl, modelId) {
