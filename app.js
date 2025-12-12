@@ -102,7 +102,12 @@ function init() {
   const val = Number(els.depthStep.value);
   depthDefaults.step = Number.isFinite(val) ? val : depthDefaults.step;
 
-  els.dropZone.addEventListener("click", () => (isTouch && els.fileInputMobile ? els.fileInputMobile.click() : els.fileInput.click()));
+  els.dropZone.addEventListener("click", (e) => {
+    // 避免在移动端对同一个 input 连续触发两次文件选择
+    if (e.target === els.fileInput || e.target === els.fileInputMobile) return;
+    if (isTouch && els.fileInputMobile) return; // 移动端直接点透明 input
+    if (els.fileInput) els.fileInput.click();
+  });
   ["dragenter", "dragover"].forEach((evt) =>
     els.dropZone.addEventListener(evt, (e) => {
       e.preventDefault();
