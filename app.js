@@ -453,9 +453,10 @@ function renderList() {
     retryBtn.disabled = state.extracting || item.status === "processing";
     retryBtn.addEventListener("click", async () => {
       if (state.extracting) return;
+      ensureVisionModel();
       const key = els.apiKey.value.trim();
       const baseUrlRaw = els.baseUrl.value.trim() || "https://api-inference.modelscope.cn/v1";
-      const modelId = els.modelInput.value.trim() || "Qwen/Qwen3-Coder-30B-A3B-Instruct";
+      const modelId = els.modelInput.value.trim() || "Qwen/Qwen3-VL-23B-A22B-Instruct";
       if (!key) {
         alert("请先填入 API Key");
         return;
@@ -534,11 +535,12 @@ function parseNumbersFromText(content) {
 
 async function runExtraction() {
   if (state.extracting) return;
+  ensureVisionModel();
   const key = els.apiKey.value.trim();
   const baseUrlRaw = els.baseUrl.value.trim() || "https://api-inference.modelscope.cn/v1";
   const baseUrl = baseUrlRaw.replace(/\/$/, "");
   const corsProxy = (els.corsProxy?.value || "").trim();
-  const modelId = els.modelInput.value.trim() || "Qwen/Qwen3-Coder-30B-A3B-Instruct";
+  const modelId = els.modelInput.value.trim() || "Qwen/Qwen3-VL-23B-A22B-Instruct";
   if (!key) {
     alert("请先填入 API Key");
     return;
@@ -793,6 +795,32 @@ function persistSettings() {
   localStorage.setItem("api_base_url", els.baseUrl.value.trim());
   localStorage.setItem("api_model_id", els.modelInput.value.trim());
   if (els.corsProxy) localStorage.setItem("api_cors_proxy", els.corsProxy.value.trim());
+}
+
+function looksVisionModel(modelId) {
+  const id = (modelId || "").toLowerCase();
+  return (
+    id.includes("vl") ||
+    id.includes("vision") ||
+    id.includes("qwen-vl") ||
+    id.includes("gpt-4o") ||
+    id.includes("gpt-4.1") ||
+    id.includes("gpt-4") // OpenAI 视觉模型一般以 gpt-4* 开头
+  );
+}
+
+function ensureVisionModel() {
+  const current = els.modelInput.value.trim();
+  if (!current) return;
+  if (looksVisionModel(current)) return;
+  const fallback = "Qwen/Qwen3-VL-23B-A22B-Instruct";
+  const ok = confirm(
+    `当前模型“${current}”可能不支持图片识别（非VL/视觉模型）。\n建议切换到“${fallback}”。\n是否现在切换？`
+  );
+  if (ok) {
+    els.modelInput.value = fallback;
+    persistSettings();
+  }
 }
 
 function syncAuthHeader(key) {
