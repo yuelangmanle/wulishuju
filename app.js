@@ -632,18 +632,7 @@ async function extractItem(item, apiKey, baseUrl, modelId, useOriginal = false) 
   const json = await res.json();
   const content = json.choices?.[0]?.message?.content;
   const parsed = safeParse(content);
-  if (!parsed) {
-    const raw = typeof content === "string" ? content : JSON.stringify(content || {});
-    const err = new Error("返回内容无法解析为 JSON");
-    err.raw = raw;
-    throw err;
-  }
-  if (!hasAnyValue(parsed)) {
-    const err = new Error("未识别到数据");
-    err.raw = typeof content === "string" ? content : JSON.stringify(content || {});
-    throw err;
-  }
-  return parsed;
+  return parsed || { raw: content };
 }
 
 function exportExcel() {
@@ -971,10 +960,13 @@ function hasAnyValue(obj) {
 async function extractWithRetry(item, apiKey, baseUrl, modelId) {
   let attempt = 0;
   let lastErr = null;
+  const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
   while (attempt < state.maxAttempts) {
     attempt += 1;
     try {
-      const res = await extractItem(item, apiKey, baseUrl, modelId, false);
+      // 桌面优先用原图，移动端先压缩后原图
+      const preferOriginal = !isTouch;
+      const res = await extractItem(item, apiKey, baseUrl, modelId, preferOriginal);
       return res;
     } catch (err) {
       lastErr = err;
