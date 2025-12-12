@@ -14,6 +14,7 @@ const state = {
 const els = {
   dropZone: document.getElementById("dropZone"),
   fileInput: document.getElementById("fileInput"),
+  fileInputMobile: document.getElementById("fileInputMobile"),
   list: document.getElementById("list"),
   countLabel: document.getElementById("countLabel"),
   sortLabel: document.getElementById("sortLabel"),
@@ -60,6 +61,7 @@ const depthDefaults = {
 };
 
 function init() {
+  const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
   const savedKey = localStorage.getItem("openai_key") || localStorage.getItem("api_key");
   if (savedKey) {
     els.apiKey.value = savedKey;
@@ -100,7 +102,7 @@ function init() {
   const val = Number(els.depthStep.value);
   depthDefaults.step = Number.isFinite(val) ? val : depthDefaults.step;
 
-  els.dropZone.addEventListener("click", () => els.fileInput.click());
+  els.dropZone.addEventListener("click", () => (isTouch && els.fileInputMobile ? els.fileInputMobile.click() : els.fileInput.click()));
   ["dragenter", "dragover"].forEach((evt) =>
     els.dropZone.addEventListener(evt, (e) => {
       e.preventDefault();
@@ -124,6 +126,14 @@ function init() {
       els.fileInput.value = "";
     }
   });
+  if (els.fileInputMobile) {
+    els.fileInputMobile.addEventListener("change", (e) => {
+      if (e.target.files?.length) {
+        handleFiles(e.target.files);
+        els.fileInputMobile.value = "";
+      }
+    });
+  }
 
   els.toggleKey.addEventListener("click", () => {
     els.apiKey.type = els.apiKey.type === "password" ? "text" : "password";
