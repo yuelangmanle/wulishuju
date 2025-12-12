@@ -219,7 +219,7 @@ async function handleFiles(fileList) {
   for (const file of incoming) {
     const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
     const meta = await readMeta(file);
-    const captureMs = meta.capture?.getTime?.() ?? captureMsFromName(file.name) ?? file.lastModified;
+    const captureMs = meta.capture?.getTime?.() ?? captureMsFromName(file.name, file.lastModified) ?? file.lastModified;
     const previewUrl = URL.createObjectURL(file);
     const payloadDataUrl = await buildPayloadDataUrl(file, meta.orientation);
     const cached = state.cache[file.name];
@@ -265,18 +265,18 @@ async function readMeta(file) {
   }
 }
 
-function captureMsFromName(name) {
-  const m = name.match(/(\d{8})[_-]?(\d{6})/);
-  if (!m) return null;
-  const dateStr = m[1];
-  const timeStr = m[2];
-  const y = parseInt(dateStr.slice(0, 4), 10);
-  const mo = parseInt(dateStr.slice(4, 6), 10) - 1;
-  const d = parseInt(dateStr.slice(6, 8), 10);
-  const hh = parseInt(timeStr.slice(0, 2), 10);
-  const mm = parseInt(timeStr.slice(2, 4), 10);
-  const ss = parseInt(timeStr.slice(4, 6), 10);
-  return new Date(y, mo, d, hh, mm, ss).getTime();
+function captureMsFromName(name, fallback) {
+  // 支持 MVIMG_20251129_142237.jpg / IMG_2025-11-29-142237 等
+  const m = name.match(/(\d{4})[^\d]?(\d{2})[^\d]?(\d{2})[^\d]?[_-]?([0-2]\d)(\d{2})(\d{2})/);
+  if (!m) return fallback || null;
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10) - 1;
+  const d = parseInt(m[3], 10);
+  const hh = parseInt(m[4], 10);
+  const mm = parseInt(m[5], 10);
+  const ss = parseInt(m[6], 10);
+  const dt = new Date(y, mo, d, hh, mm, ss);
+  return dt.getTime?.() || fallback || null;
 }
 
 function sortItems() {
@@ -980,18 +980,18 @@ function wait(ms) {
 async function buildPayloadDataUrl(file, orientation) {
   try {
     const img = await loadImageFromFile(file);
-    const maxSide = 1600;
-    const maxBytes = 1600000; // ~1.6 MB to stay under data URI limits
+    const maxSide = 2000;
+    const maxBytes = 2500000; // ~2.5 MB to stay under data URI limits
     let scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
-    let quality = 0.7;
+    let quality = 0.82;
 
     let dataUrl = renderToDataUrl(img, scale, quality, orientation);
     let bytes = dataUrlByteLength(dataUrl);
-    while (bytes > maxBytes && (quality > 0.35 || Math.max(img.naturalWidth, img.naturalHeight) * scale > 900)) {
-      if (quality > 0.35) {
-        quality -= 0.1;
+    while (bytes > maxBytes && (quality > 0.4 || Math.max(img.naturalWidth, img.naturalHeight) * scale > 900)) {
+      if (quality > 0.4) {
+        quality -= 0.08;
       } else {
-        scale *= 0.85;
+        scale *= 0.9;
       }
       dataUrl = renderToDataUrl(img, scale, quality, orientation);
       bytes = dataUrlByteLength(dataUrl);
